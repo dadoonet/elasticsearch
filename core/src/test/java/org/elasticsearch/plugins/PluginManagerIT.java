@@ -487,7 +487,7 @@ public class PluginManagerIT extends ESIntegTestCase {
     private boolean isDownloadServiceWorking(String host, int port, String resource) {
         try {
             String protocol = port == 443 ? "https" : "http";
-            HttpResponse response = HttpClient.instance(protocol, host, port).path(resource).execute();
+            HttpResponse response = HttpClient.instance(protocol, host, port, Settings.EMPTY).path(resource).execute();
             if (response.getStatusCode() != 200) {
                 logger.warn("[{}{}] download service is not working. Disabling current test.", host, resource);
                 return false;

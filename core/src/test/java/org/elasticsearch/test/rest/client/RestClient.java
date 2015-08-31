@@ -46,41 +46,6 @@ import java.util.Set;
 public class RestClient {
 
     public static final String PROTOCOL = "protocol";
-    // TODO Not sure how to use this
-    public static final String TRUSTSTORE_PATH = "truststore.path";
-    public static final String TRUSTSTORE_PASSWORD = "truststore.password";
-
-    /*
-         SSLConnectionSocketFactory sslsf;
-     String keystorePath = settings.get(TRUSTSTORE_PATH);
-     if (keystorePath != null) {
-     final String keystorePass = settings.get(TRUSTSTORE_PASSWORD);
-     if (keystorePass == null) {
-     throw new IllegalStateException(TRUSTSTORE_PATH + " is provided but not " + TRUSTSTORE_PASSWORD);
-     }
-     Path path = PathUtils.get(keystorePath);
-     if (!Files.exists(path)) {
-     throw new IllegalStateException(TRUSTSTORE_PATH + " is set but points to a non-existing file");
-     }
-     try {
-     KeyStore keyStore = KeyStore.getInstance("jks");
-     try (InputStream is = Files.newInputStream(path)) {
-     keyStore.load(is, keystorePass.toCharArray());
-     }
-     SSLContext sslcontext = SSLContexts.custom()
-     .loadTrustMaterial(keyStore, null)
-     .build();
-     sslsf = new SSLConnectionSocketFactory(sslcontext);
-     } catch (KeyStoreException|NoSuchAlgorithmException|KeyManagementException|CertificateException e) {
-     throw new RuntimeException(e);
-     }
-     } else {
-     sslsf = SSLConnectionSocketFactory.getSocketFactory();
-     }
-
-     */
-
-
     private static final ESLogger logger = Loggers.getLogger(RestClient.class);
     //query_string params that don't need to be declared in the spec, they are supported by default
     private static final Set<String> ALWAYS_ACCEPTED_QUERY_STRING_PARAMS = Sets.newHashSet("pretty", "source", "filter_path");
@@ -98,7 +63,7 @@ public class RestClient {
         this.headers = settings.getAsMap();
         this.protocol = settings.get(PROTOCOL, "http");
         this.addresses = addresses;
-        this.httpClient = createHttpClient();
+        this.httpClient = createHttpClient(settings);
         this.esVersion = readAndCheckVersion();
         logger.debug("REST client initialized {}, elasticsearch version: [{}]", addresses, esVersion);
     }
@@ -112,7 +77,7 @@ public class RestClient {
 
         String version = null;
         for (InetSocketAddress address : addresses) {
-            HttpClient client = HttpClient.instance(address.getHostName(), address.getPort())
+            HttpClient client = HttpClient.instance(address.getHostString(), address.getPort())
                     .addHeaders(headers)
                     .path(restApi.getPaths().get(0))
                     .method(restApi.getMethods().get(0));
@@ -253,8 +218,8 @@ public class RestClient {
         return restApi;
     }
 
-    protected HttpClient createHttpClient() {
+    protected HttpClient createHttpClient(Settings settings) {
         InetSocketAddress address = RandomizedTest.randomFrom(addresses);
-        return HttpClient.instance(protocol, NetworkAddress.formatAddress(address.getAddress()), address.getPort());
+        return HttpClient.instance(protocol, NetworkAddress.formatAddress(address.getAddress()), address.getPort(), settings);
     }
 }

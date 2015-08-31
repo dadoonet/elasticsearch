@@ -19,14 +19,11 @@
 
 package org.elasticsearch.options.detailederrors;
 
-import org.apache.http.impl.client.HttpClients;
 import org.elasticsearch.common.settings.Settings;
-import org.elasticsearch.http.HttpServerTransport;
 import org.elasticsearch.node.Node;
 import org.elasticsearch.test.ESIntegTestCase;
 import org.elasticsearch.test.ESIntegTestCase.ClusterScope;
 import org.elasticsearch.test.ESIntegTestCase.Scope;
-import org.elasticsearch.test.rest.client.http.HttpRequestBuilder;
 import org.elasticsearch.test.rest.client.http.HttpResponse;
 import org.junit.Test;
 
@@ -61,8 +58,7 @@ public class DetailedErrorsEnabledIT extends ESIntegTestCase {
         assertThat(response.getBody(), containsString("\"error_trace\":{\"message\":\"Validation Failed"));
 
         // Make the HTTP request
-        response = new HttpRequestBuilder(HttpClients.createDefault())
-                .httpTransport(internalCluster().getDataNodeInstance(HttpServerTransport.class))
+        response = httpClient()
                 .path("/")
                 .method("DELETE")
                 .execute();

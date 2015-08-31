@@ -23,24 +23,34 @@ import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import org.elasticsearch.ElasticsearchException;
 import org.elasticsearch.common.Strings;
+import org.elasticsearch.common.io.PathUtils;
 import org.elasticsearch.common.io.Streams;
 import org.elasticsearch.common.logging.ESLogger;
 import org.elasticsearch.common.logging.Loggers;
+import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.transport.InetSocketTransportAddress;
 import org.elasticsearch.http.HttpServerTransport;
 import org.elasticsearch.rest.RestStatus;
 
+import javax.net.ssl.*;
 import java.io.*;
 import java.net.*;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.security.*;
+import java.security.cert.CertificateException;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
 public class HttpClient {
 
+    public static final String TRUSTSTORE_PATH = "truststore.path";
+    public static final String TRUSTSTORE_PASSWORD = "truststore.password";
     protected final ESLogger logger = Loggers.getLogger(getClass());
 
     private final URI baseUrl;
+    private final SSLSocketFactory sslSocketFactory;
     private String path;
     private String method;
     private Map<String, String> headers;
@@ -48,19 +58,20 @@ public class HttpClient {
     private String payload;
 
     public static HttpClient instance(String hostname, Integer port) {
-        return new HttpClient("http", hostname, port);
+        return new HttpClient("http", hostname, port, Settings.EMPTY);
     }
 
     public static HttpClient instance(HttpServerTransport transport) {
         InetSocketTransportAddress transportAddress = (InetSocketTransportAddress) transport.boundAddress().publishAddress();
-        return new HttpClient("http", transportAddress.address().getHostName(), transportAddress.address().getPort());
+        return new HttpClient("http", transportAddress.address().getHostString(), transportAddress.address().getPort(), Settings.EMPTY);
    }
 
-    public static HttpClient instance(String protocol, String hostname, Integer port) {
-        return new HttpClient(protocol, hostname, port);
+    public static HttpClient instance(String protocol, String hostname, Integer port, Settings settings) {
+        return new HttpClient(protocol, hostname, port, settings);
     }
 
-    private HttpClient(String protocol, String hostname, Integer port) {
+    private HttpClient(String protocol, String hostname, Integer port, Settings settings) {
+        sslSocketFactory = setupSSLSocketFactory(protocol, settings);
         try {
             // Hack because HttpURLConnection silently ignore Origin header
             // http://stackoverflow.com/questions/11147330/httpurlconnection-wont-let-me-set-via-header
@@ -170,6 +181,9 @@ public class HttpClient {
         HttpURLConnection urlConnection;
         try {
             urlConnection = (HttpURLConnection) url.openConnection();
+            if (urlConnection instanceof HttpsURLConnection) {
+                ((HttpsURLConnection) urlConnection).setSSLSocketFactory(sslSocketFactory);
+            }
             urlConnection.setRequestProperty("Accept-Charset", Charsets.UTF_8.name());
             urlConnection.setRequestMethod(method);
             urlConnection.setInstanceFollowRedirects(false);
@@ -257,5 +271,42 @@ public class HttpClient {
         if (restResponse.isError()) {
             throw new ElasticsearchException("non ok status code [" + restResponse.getStatusCode() + "] returned");
         }
+    }
+
+    private SSLSocketFactory setupSSLSocketFactory(String protocol, Settings settings) {
+        if ("https".equals(protocol)) {
+            // default to null to fallback on JVM trusted certs if no truststore is specified
+            KeyStore truststore = null;
+            String truststorePath = settings.get(TRUSTSTORE_PATH);
+            if (truststorePath != null) {
+                final String truststorePassword = settings.get(TRUSTSTORE_PASSWORD);
+                if (truststorePassword == null) {
+                    throw new IllegalStateException(TRUSTSTORE_PATH + " is provided but not " + TRUSTSTORE_PASSWORD);
+                }
+                Path path = PathUtils.get(truststorePath);
+                if (!Files.exists(path)) {
+                    throw new IllegalStateException(TRUSTSTORE_PATH + " is set but points to a non-existing file");
+                }
+                try {
+                    truststore = KeyStore.getInstance("jks");
+                    try (InputStream is = Files.newInputStream(path)) {
+                        truststore.load(is, truststorePassword.toCharArray());
+                    }
+                } catch (KeyStoreException | IOException | CertificateException | NoSuchAlgorithmException e) {
+                    throw new RuntimeException(e);
+                }
+            }
+
+            try {
+                TrustManagerFactory factory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+                factory.init(truststore);
+                SSLContext sslcontext = SSLContext.getDefault();
+                sslcontext.init(null, factory.getTrustManagers(), new SecureRandom());
+                return sslcontext.getSocketFactory();
+            } catch (KeyStoreException | NoSuchAlgorithmException | KeyManagementException e) {
+                throw new RuntimeException(e);
+            }
+        }
+        return null;
     }
 }
