@@ -72,7 +72,11 @@ public class AzureComputeServiceImpl extends AbstractLifecycleComponent<AzureCom
         // Check that we have all needed properties
         Configuration configuration;
         try {
-            configuration = ManagementConfiguration.configure(new URI(Azure.ENDPOINT),
+            // We use here configure(profile, Configuration, ...) instead of
+            // configure(...) because otherwise Azure SDK tries to access to the ClassLoader to load
+            // a default configuration file from META-INF/com.microsoft.windowsazure.properties
+            // This is forbidden by the security manager. So we provide an empty Configuration instead.
+            configuration = ManagementConfiguration.configure(null, new Configuration(), new URI(Azure.ENDPOINT),
                     subscriptionId, keystorePath, keystorePassword, keystoreType);
         } catch (IOException|URISyntaxException e) {
             logger.error("can not start azure client: {}", e.getMessage());
